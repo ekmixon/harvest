@@ -49,16 +49,10 @@ func (me *Matrix) LazyGetValueInt64(m, i string) (int64, bool) {
 	return 0, false
 }
 
-/*
-func (me *Matrix) LazyGetValueInt64(mkey, ikey string) int64 {
-	var v int64
-	if instance := me.GetInstance(ikey); instance != nil {
-		if metric := me.GetMetric(mkey); metric != nil {
-			v, _ = metric.GetValueInt64(instance)
-		}
-	}
-	return v
-}*/
+func (me *Matrix) LazyValueInt64(m, i string) int64 {
+	valueInt64, _ := me.LazyGetValueInt64(m, i)
+	return valueInt64
+}
 
 func (me *Matrix) LazyAddValueInt64(m, i string, v int64) error {
 	if metric := me.GetMetric(m); metric != nil {
@@ -118,4 +112,18 @@ func (me *Matrix) LazySetValueFloat64(mkey, ikey string, v float64) error {
 		return errors.New(INVALID_METRIC_KEY, mkey)
 	}
 	return errors.New(INVALID_INSTANCE_KEY, ikey)
+}
+
+func (me *Matrix) LazyGetValueFloat64(m, i string) (float64, bool) {
+	if metric := me.GetMetric(m); metric != nil {
+		if instance := me.GetInstance(i); instance != nil {
+			return metric.GetValueFloat64(instance)
+		}
+	}
+	return 0.0, false
+}
+
+func (me *Matrix) LazyValueFloat64(m, i string) float64 {
+	valueFloat64, _ := me.LazyGetValueFloat64(m, i)
+	return valueFloat64
 }

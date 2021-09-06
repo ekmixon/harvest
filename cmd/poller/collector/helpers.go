@@ -59,6 +59,7 @@ func (c *AbstractCollector) ImportSubTemplate(model, filename string, ver [3]int
 
 	pathPrefix = path.Join(c.Options.HomePath, "conf/", strings.ToLower(c.Name), model)
 	c.Logger.Debug().Msgf("Looking for best-fitting template in [%s]", pathPrefix)
+	verWithDots := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ver)), "."), "[]")
 
 	// check for available versions, those are the subdirectories that include filename
 	if files, err := ioutil.ReadDir(pathPrefix); err == nil {
@@ -93,7 +94,6 @@ func (c *AbstractCollector) ImportSubTemplate(model, filename string, ver [3]int
 
 		sort.Sort(version.Collection(versions))
 
-		verWithDots := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ver)), "."), "[]")
 		verS, err := version.NewVersion(verWithDots)
 		if err != nil {
 			c.Logger.Trace().Msgf("error parsing ONTAP version: %s err: %s", verWithDots, err)
@@ -107,31 +107,35 @@ func (c *AbstractCollector) ImportSubTemplate(model, filename string, ver [3]int
 	}
 
 	if selectedVersion == "" {
-		return nil, errors.New("No best-fitting subtemplate version found")
+		return nil, errors.New("No best-fit template found")
 	}
 
 	subTemplateFp = path.Join(pathPrefix, selectedVersion, filename)
-	c.Logger.Info().Msgf("selected best-fitting subtemplate [%s]", subTemplateFp)
+	c.Logger.Info().Msgf("best-fit template [%s] for [%s]", subTemplateFp, verWithDots)
 	return tree.Import("yaml", subTemplateFp)
 }
 
-//getClosestIndex input versions should be sorted
-// returns -1 if not match else returns equals or closest match to the left
+//getClosestIndex returns the closest left match to the sorted list of input versions
+// returns -1 when the versions list is empty
+// returns equal or closest match to the left
 func getClosestIndex(versions []*version.Version, version *version.Version) int {
-	var l = 0
-	var r = len(versions) - 1
-	for l <= r {
-		var m = l + ((r - l) >> 1)
-		var comp = versions[m].Compare(version)
-		if comp < 0 { // versions[m] comes before the element
-			l = m + 1
-		} else if comp > 0 { // versions[m] comes after the element
-			r = m - 1
-		} else { // versions[m] equals the element
-			return m
-		}
+	if len(versions) == 0 {
+		return -1
 	}
-	return l - 1
+	idx := sort.Search(len(versions), func(i int) bool {
+		return versions[i].GreaterThanOrEqual(version)
+	})
+
+	// if we are at length of slice
+	if idx == len(versions) {
+		return len(versions) - 1
+	}
+
+	// if idx is greater than 0 but less than length of slice
+	if idx > 0 && idx < len(versions) && !versions[idx].Equal(version) {
+		return idx - 1
+	}
+	return idx
 }
 
 // ParseMetricName parses display name from the raw name of the metric as defined in (sub)template.

@@ -217,26 +217,6 @@
       "description": "",
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "from": "",
-              "id": 0,
-              "operator": "",
-              "text": "UP",
-              "to": "",
-              "type": 1,
-              "value": "0"
-            },
-            {
-              "from": "",
-              "id": 1,
-              "operator": "",
-              "text": "DOWN",
-              "to": "",
-              "type": 1,
-              "value": "1"
-            }
-          ],
           "noValue": "n/a",
           "thresholds": {
             "mode": "absolute",
@@ -293,26 +273,6 @@
       "description": "",
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "from": "",
-              "id": 0,
-              "operator": "",
-              "text": "UP",
-              "to": "",
-              "type": 1,
-              "value": "0"
-            },
-            {
-              "from": "",
-              "id": 1,
-              "operator": "",
-              "text": "DOWN",
-              "to": "",
-              "type": 1,
-              "value": "1"
-            }
-          ],
           "noValue": "n/a",
           "thresholds": {
             "mode": "absolute",
@@ -493,7 +453,7 @@
                   {
                     "from": "0",
                     "id": 1,
-                    "text": "up",
+                    "text": "down",
                     "to": "0.999",
                     "type": 2,
                     "value": "0"
@@ -501,7 +461,7 @@
                   {
                     "from": "",
                     "id": 2,
-                    "text": "down",
+                    "text": "up",
                     "to": "",
                     "type": 1,
                     "value": "1"
@@ -514,11 +474,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "rgb(75, 155, 35)",
+                      "color": "rgb(199, 48, 66)",
                       "value": null
                     },
                     {
-                      "color": "rgb(225, 90, 40)",
+                      "color": "rgb(74, 163, 52)",
                       "value": 1
                     }
                   ]
@@ -676,7 +636,7 @@
           "refId": "A"
         },
         {
-          "expr": "nic_state{datacenter=\"$Datacenter\",cluster=\"$Cluster\",node=~\"$Node\"}",
+          "expr": "nic_new_status{datacenter=\"$Datacenter\",cluster=\"$Cluster\",node=~\"$Node\"}",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -2423,7 +2383,7 @@
         "allValue": null,
         "current": {},
         "datasource": "${DS_PROMETHEUS}",
-        "definition": "label_values(nic_labels, datacenter)",
+        "definition": "label_values(node_labels{system_type!=\"7mode\"}, datacenter)",
         "description": null,
         "error": null,
         "hide": 0,
@@ -2433,7 +2393,7 @@
         "name": "Datacenter",
         "options": [],
         "query": {
-          "query": "label_values(nic_labels, datacenter)",
+          "query": "label_values(node_labels{system_type!=\"7mode\"}, datacenter)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

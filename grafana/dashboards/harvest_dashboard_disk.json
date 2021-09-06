@@ -15,7 +15,7 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 46,
+  "id": null,
   "iteration": 1602106783730,
   "links": [],
   "panels": [
@@ -840,7 +840,7 @@
       "yaxes": [
         {
           "$$hashKey": "object:234",
-          "format": "percentunit",
+          "format": "percent",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -1003,22 +1003,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "outage"
-            },
-            "properties": [
-              {
-                "id": "noValue",
-                "value": "Ok"
-              },
-              {
-                "id": "displayName",
-                "value": "Status"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "disk"
             },
             "properties": [
@@ -1163,6 +1147,31 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "diskStatus"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Status"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "id": 1,
+                    "type": 1,
+                    "from": "",
+                    "to": "",
+                    "text": "Ok",
+                    "value": " "
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "shelf_bay"
             },
             "properties": [
@@ -1235,7 +1244,7 @@
           "refId": "C"
         },
         {
-          "expr": "disk_labels{datacenter=\"$Datacenter\",cluster=\"$Cluster\"}",
+          "expr": "label_join(disk_labels{datacenter=\"$Datacenter\",cluster=\"$Cluster\"}, \"diskStatus\", \" \",\"NonSupportedField\", \"outage\")",
           "legendFormat": "",
           "interval": "",
           "exemplar": true,
@@ -1269,7 +1278,8 @@
               "owner_node": true,
               "shared": true,
               "shelf": true,
-              "Value #E": true
+              "Value #E": true,
+              "outage": true
             },
             "indexByName": {
               "Time": 0,
@@ -1283,8 +1293,7 @@
               "serial_number": 5,
               "shelf": 1,
               "shelf_bay": 2,
-              "type": 4,
-              "outage": 12
+              "type": 4
             },
             "renameByName": {}
           }

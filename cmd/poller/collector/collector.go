@@ -8,7 +8,7 @@
 	A Harvest collector should normally "inherit" all these
 	attributes and implement only the PollData function.
 	The AbstractCollector will make sure that the collector
-	is properly initializied, metadata are updated and
+	is properly initialized, metadata are updated and
 	data poll(s) and plugins run as scheduled. The collector
 	can also choose to override any of the attributes
 	implemented by AbstractCollector.
@@ -60,6 +60,7 @@ type Collector interface {
 	LinkExporter(exporter.Exporter)
 	LoadPlugins(*node.Node, Collector) error
 	LoadPlugin(string, *plugin.AbstractPlugin) plugin.Plugin
+	CollectAutoSupport(p *Payload)
 }
 
 // Status defines the possible states of a collector
@@ -77,7 +78,7 @@ var Status = [3]string{
 // are properly and timely executed.
 type AbstractCollector struct {
 	Name    string           // name of the collector, CamelCased
-	Object  string           // object of the collector, describes what thet collector is collecting
+	Object  string           // object of the collector, describes what that collector is collecting
 	Logger  *logging.Logger  // logger used for logging
 	Status  uint8            // current state of th
 	Message string           // reason if collector is in failed state
@@ -92,7 +93,10 @@ type AbstractCollector struct {
 	collectCount uint64              // count of collected data points
 	// this is different from what the collector will have in its metadata, since this variable
 	// holds count independent of the poll interval of the collector, used to give stats to Poller
-	countMux *sync.Mutex // used for atomic access to collectCount
+	countMux    *sync.Mutex // used for atomic access to collectCount
+	HostVersion string
+	HostModel   string
+	HostUUID    string
 }
 
 // New creates an AbstractCollector with the given arguments:
@@ -153,7 +157,7 @@ func Init(c Collector) error {
 
 		if m := reflect.ValueOf(c).MethodByName(methodName); m.IsValid() {
 			if foo, ok := m.Interface().(func() (*matrix.Matrix, error)); ok {
-				if err := s.NewTaskString(task.GetNameS(), task.GetContentS(), foo); err != nil {
+				if err := s.NewTaskString(task.GetNameS(), task.GetContentS(), foo, true, "Collector_"+c.GetName()+"_"+c.GetObject()); err != nil {
 					return errors.New(errors.INVALID_PARAM, "schedule ("+task.GetNameS()+"): "+err.Error())
 				}
 			} else {
@@ -166,7 +170,7 @@ func Init(c Collector) error {
 	c.SetSchedule(s)
 
 	// Initialize Matrix, the container of collected data
-	mx := matrix.New(name, object)
+	mx := matrix.New(name, object, object)
 	if exportOptions := params.GetChildS("export_options"); exportOptions != nil {
 		mx.SetExportOptions(exportOptions)
 	} else {
@@ -197,7 +201,7 @@ func Init(c Collector) error {
 	}
 
 	// Initialize metadata
-	md := matrix.New(name, "metadata_collector")
+	md := matrix.New(name, "metadata_collector", "metadata_collector")
 
 	md.SetGlobalLabel("hostname", opts.Hostname)
 	md.SetGlobalLabel("version", opts.Version)
@@ -211,8 +215,6 @@ func Init(c Collector) error {
 	md.NewMetricInt64("parse_time")
 	md.NewMetricInt64("calc_time")
 	md.NewMetricInt64("plugin_time")
-	md.NewMetricInt64("content_length")
-	md.NewMetricFloat64("api_time_percent")
 	md.NewMetricUint64("count")
 	//md.AddLabel("task", "")
 	//md.AddLabel("interval", "")
@@ -233,6 +235,23 @@ func Init(c Collector) error {
 	return nil
 }
 
+// @TODO unsafe to read concurrently
+func (me *AbstractCollector) GetMetadata() *matrix.Matrix {
+	return me.Metadata
+}
+
+func (me *AbstractCollector) GetHostModel() string {
+	return me.HostModel
+}
+
+func (me *AbstractCollector) GetHostVersion() string {
+	return me.HostVersion
+}
+
+func (me *AbstractCollector) GetHostUUID() string {
+	return me.HostUUID
+}
+
 // Start will run the collector in an infinity loop
 func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 	defer func() {
@@ -250,7 +269,9 @@ func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 
 	for {
 
-		me.Metadata.Reset()
+		// We can't reset metadata here because autosupport metadata is reset
+		// https://github.com/NetApp/harvest-private/issues/114 for details
+		//me.Metadata.Reset()
 
 		results := make([]*matrix.Matrix, 0)
 
@@ -264,6 +285,9 @@ func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 				start, pluginStart   time.Time
 				taskTime, pluginTime time.Duration
 			)
+
+			// reset task metadata
+			me.Metadata.ResetInstance(task.Name)
 
 			start = time.Now()
 			data, err := task.Run()
@@ -283,24 +307,37 @@ func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 						retryDelay *= 4
 					}
 					if !me.Schedule.IsStandBy() {
-						//logger.Error(me.Prefix, err.Error())
-						me.Logger.Warn().Msgf("target unreachable, entering standby mode (retry to connect in %d s)", retryDelay)
+						me.Logger.Warn().
+							Str("task", task.Name).
+							Int("retryDelay", retryDelay).
+							Msgf("target unreachable, entering standby mode (retry in retryDelay s)")
 					}
+					me.Logger.Debug().
+						Err(err).
+						Int("retryDelay", retryDelay).
+						Str("task", task.Name).
+						Msg("Target unreachable, entering standby mode (retry in retryDelay s)")
 					me.Schedule.SetStandByMode(task, time.Duration(retryDelay)*time.Second)
 					me.SetStatus(1, errors.ERR_CONNECTION)
 				// there are no instances to collect
 				case errors.IsErr(err, errors.ERR_NO_INSTANCE):
 					me.Schedule.SetStandByMode(task, 5*time.Minute)
 					me.SetStatus(1, errors.ERR_NO_INSTANCE)
-					me.Logger.Info().Msgf("no [%s] instances on system, entering standby mode", me.Object)
+					me.Logger.Info().
+						Str("task", task.Name).
+						Str("object", me.Object).
+						Msg("no instances of object on system, entering standby mode")
 				// no metrics available
 				case errors.IsErr(err, errors.ERR_NO_METRIC):
 					me.SetStatus(1, errors.ERR_NO_METRIC)
 					me.Schedule.SetStandByMode(task, 1*time.Hour)
-					me.Logger.Warn().Msgf("no [%s] metrics on system, entering standby mode", me.Object)
+					me.Logger.Info().
+						Str("task", task.Name).
+						Str("object", me.Object).
+						Msg("no metrics of object on system, entering standby mode")
 				// not an error we are expecting, so enter failed state and terminate
 				default:
-					me.Logger.Error().Stack().Err(err).Msg("")
+					me.Logger.Error().Stack().Err(err).Str("task", task.Name).Msg("")
 					if errmsg := errors.GetClass(err); errmsg != "" {
 						me.SetStatus(2, errmsg)
 					} else {
@@ -313,8 +350,9 @@ func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 			} else if me.Schedule.IsStandBy() {
 				// recover from standby mode
 				me.Schedule.Recover()
+				retryDelay = 1
 				me.SetStatus(0, "running")
-				me.Logger.Info().Msg("recovered from standby mode, back to normal schedule")
+				me.Logger.Info().Str("task", task.Name).Msg("recovered from standby mode, back to normal schedule")
 			}
 
 			if data != nil {
@@ -339,16 +377,11 @@ func (me *AbstractCollector) Start(wg *sync.WaitGroup) {
 					pluginTime = time.Since(pluginStart)
 					me.Metadata.LazySetValueInt64("plugin_time", task.Name, pluginTime.Microseconds())
 				}
-
-				// update some metadata
-				me.Metadata.LazySetValueInt64("poll_time", task.Name, task.GetDuration().Microseconds())
-				me.Metadata.LazySetValueInt64("task_time", task.Name, taskTime.Microseconds())
-
-				if apiTime, ok := me.Metadata.LazyGetValueInt64("api_time", task.Name); ok && apiTime != 0 {
-					me.Metadata.LazySetValueFloat64("api_time_percent", task.Name, float64(apiTime)/float64(taskTime.Microseconds())*100)
-				}
-
 			}
+
+			// update task metadata
+			me.Metadata.LazySetValueInt64("poll_time", task.Name, task.GetDuration().Microseconds())
+			me.Metadata.LazySetValueInt64("task_time", task.Name, taskTime.Microseconds())
 		}
 
 		// pass results to exporters
@@ -458,7 +491,7 @@ func (me *AbstractCollector) SetMetadata(m *matrix.Matrix) {
 	me.Metadata = m
 }
 
-// WantedExporters retrievs the names of the exporters to which the collector
+// WantedExporters retrieves the names of the exporters to which the collector
 // needs to export data
 func (me *AbstractCollector) WantedExporters(configFp string) []string {
 	names, err := conf.GetUniqueExporters(me.Params, configFp)
@@ -512,4 +545,8 @@ func (me *AbstractCollector) LoadPlugins(params *node.Node, c Collector) error {
 	}
 	me.Logger.Debug().Msgf("initialized %d plugins", len(me.Plugins))
 	return nil
+}
+
+// CollectAutoSupport allows a Collector to add autosupport information
+func (me *AbstractCollector) CollectAutoSupport(_ *Payload) {
 }

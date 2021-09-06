@@ -57,6 +57,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // default params
@@ -66,6 +67,8 @@ var (
 	logMaxMegaBytes = logging.DefaultLogMaxMegaBytes // 10MB
 	logMaxBackups   = logging.DefaultLogMaxBackups
 	logMaxAge       = logging.DefaultLogMaxAge
+	asupSchedule    = "24h" // send every 24 hours
+	asupFirstWrite  = "4m"  // after this time, write 1st autosupport payload (for testing)
 )
 
 // init with default configuration by default it gets logged both to console and  harvest.log
@@ -236,19 +239,19 @@ func (p *Poller) Init() error {
 			if len(p.options.Collectors) != 0 {
 				ok = false
 				for _, x := range p.options.Collectors {
-					if x == c {
+					if x == c.Name {
 						ok = true
 						break
 					}
 				}
 			}
 			if !ok {
-				logger.Debug().Msgf("skipping collector [%s]", c)
+				logger.Debug().Msgf("skipping collector [%s]", c.Name)
 				continue
 			}
 
 			if err = p.loadCollector(c, ""); err != nil {
-				logger.Error().Stack().Err(err).Msgf("load collector (%s):", c)
+				logger.Error().Stack().Err(err).Msgf("load collector (%s) templates=%s:", c.Name, *c.Templates)
 			}
 		}
 	}
@@ -276,17 +279,79 @@ func (p *Poller) Init() error {
 		pollerSchedule = *p.params.PollerSchedule
 	}
 	p.schedule = schedule.New()
-	if err = p.schedule.NewTaskString("poller", pollerSchedule, nil); err != nil {
+	if err = p.schedule.NewTaskString("poller", pollerSchedule, nil, true, "poller_"+p.name); err != nil {
 		logger.Error().Stack().Err(err).Msg("set schedule:")
 		return err
 	}
 	logger.Debug().Msgf("set poller schedule with %s frequency", pollerSchedule)
+
+	// Check if autosupport is enabled
+	tools, err := conf.GetTools(p.options.Config)
+	if err != nil {
+		logger.Error().Stack().
+			Str("config", p.options.Config).
+			Err(err).Msgf("Failed to load tools from config")
+		return err
+	}
+
+	if tools.AsupDisabled {
+		logger.Info().Msgf("Autosupport is disabled")
+	} else {
+		if p.targetIsOntap() {
+			// Write the payload after asupFirstWrite.
+			// This is to examine the autosupport contents
+			// Nothing is sent, sending happens based on the asupSchedule
+			duration, err := time.ParseDuration(asupFirstWrite)
+			if err != nil {
+				logger.Error().Err(err).
+					Str("asupFirstWrite", asupFirstWrite).
+					Msg("Failed to write 1st autosupport payload.")
+			} else {
+				time.AfterFunc(duration, func() {
+					p.firstAutoSupport()
+				})
+			}
+			if err = p.schedule.NewTaskString("asup", asupSchedule, p.startAsup, p.options.Asup, "asup_"+p.name); err != nil {
+				return err
+			}
+			logger.Info().
+				Str("asupSchedule", asupSchedule).
+				Msg("Autosupport scheduled.")
+		} else {
+			logger.Info().
+				Str("poller", p.name).
+				Msg("Autosupport disabled since poller not connected to ONTAP.")
+		}
+	}
 
 	// famous last words
 	logger.Info().Msg("poller start-up complete")
 
 	return nil
 
+}
+
+func (p *Poller) firstAutoSupport() {
+	if p.collectors == nil {
+		return
+	}
+	if _, err := collector.BuildAndWriteAutoSupport(p.collectors, p.status, p.name); err != nil {
+		logger.Error().Err(err).
+			Str("poller", p.name).
+			Msg("First autosupport failed.")
+	}
+}
+
+func (p *Poller) startAsup() (*matrix.Matrix, error) {
+	if p.collectors != nil {
+		if err := collector.SendAutosupport(p.collectors, p.status, p.name); err != nil {
+			logger.Error().Err(err).
+				Str("poller", p.name).
+				Msg("Start autosupport failed.")
+			return nil, err
+		}
+	}
+	return nil, nil
 }
 
 // Start will run the collectors and the poller itself
@@ -321,19 +386,17 @@ func (p *Poller) Start() {
 // report metadata and do some housekeeping
 func (p *Poller) Run() {
 
-	// poller schedule has just one task
+	// poller schedule has the poller and asup task (when enabled)
 	task := p.schedule.GetTask("poller")
+	asuptask := p.schedule.GetTask("asup")
 
 	// number of collectors/exporters that are still up
 	upCollectors := 0
 	upExporters := 0
 
 	for {
-
 		if task.IsDue() {
-
 			task.Start()
-
 			// flush metadata
 			p.status.Reset()
 			p.metadata.Reset()
@@ -413,6 +476,11 @@ func (p *Poller) Run() {
 			upExporters = upe
 		}
 
+		// asup task will be nil when autosupport is disabled
+		if asuptask != nil && asuptask.IsDue() {
+			asuptask.Run()
+		}
+
 		p.schedule.Sleep()
 	}
 }
@@ -453,15 +521,17 @@ func (p *Poller) ping() (float32, bool) {
 // dynamically load and initialize a collector
 // if there are more than one objects defined for a collector,
 // then multiple collectors will be initialized
-func (p *Poller) loadCollector(class, object string) error {
+func (p *Poller) loadCollector(c conf.Collector, object string) error {
 
 	var (
-		err              error
-		template, custom *node.Node
-		collectors       []collector.Collector
-		col              collector.Collector
+		class                 string
+		err                   error
+		template, subTemplate *node.Node
+		collectors            []collector.Collector
+		col                   collector.Collector
 	)
 
+	class = c.Name
 	// throw warning for deprecated collectors
 	if r, d := deprecatedCollectors[strings.ToLower(class)]; d {
 		if r != "" {
@@ -473,15 +543,26 @@ func (p *Poller) loadCollector(class, object string) error {
 
 	// load the template file(s) of the collector where we expect to find
 	// object name or list of objects
-	if template, err = collector.ImportTemplate(p.options.HomePath, "default.yaml", class); err != nil {
-		return err
-	} else if template == nil { // probably redundant
-		return errors.New(errors.MISSING_PARAM, "collector template")
+	if c.Templates != nil {
+		for _, t := range *c.Templates {
+			if subTemplate, err = collector.ImportTemplate(p.options.HomePath, t, class); err != nil {
+				logger.Warn().
+					Str("err", err.Error()).
+					Msg("Unable to load template.")
+				continue
+			}
+			if template == nil {
+				template = subTemplate
+			} else {
+				logger.Debug().
+					Str("template", t).
+					Msg("Merged template.")
+				template.Merge(subTemplate)
+			}
+		}
 	}
-
-	if custom, err = collector.ImportTemplate(p.options.HomePath, "custom.yaml", class); err == nil && custom != nil {
-		template.Merge(custom)
-		logger.Debug().Msg("merged custom and default templates")
+	if template == nil {
+		return fmt.Errorf("no templates loaded for %s", c.Name)
 	}
 	// add the poller's parameters to the collector's parameters
 	Union2(template, p.params)
@@ -715,7 +796,7 @@ func (p *Poller) getExporter(name string) exporter.Exporter {
 // initialize matrices to be used as metadata
 func (p *Poller) loadMetadata() {
 
-	p.metadata = matrix.New("poller", "metadata_component")
+	p.metadata = matrix.New("poller", "metadata_component", "metadata_component")
 	p.metadata.NewMetricUint8("status")
 	p.metadata.NewMetricUint64("count")
 	p.metadata.SetGlobalLabel("poller", p.name)
@@ -724,7 +805,7 @@ func (p *Poller) loadMetadata() {
 	p.metadata.SetExportOptions(matrix.DefaultExportOptions())
 
 	// metadata for target system
-	p.status = matrix.New("poller", "metadata_target")
+	p.status = matrix.New("poller", "metadata_target", "metadata_component")
 	p.status.NewMetricUint8("status")
 	p.status.NewMetricFloat32("ping")
 	p.status.NewMetricUint32("goroutines")
@@ -742,6 +823,18 @@ var pollerCmd = &cobra.Command{
 	Short: "Harvest Poller - Runs collectors and exporters for a target system",
 	Args:  cobra.NoArgs,
 	Run:   startPoller,
+}
+
+// Returns true if at least one collector is known
+// to collect from an Ontap system (needs to be updated
+// when we add other Ontap collectors, e.g. REST)
+func (p *Poller) targetIsOntap() bool {
+	for _, c := range p.collectors {
+		if c.GetName() == "ZapiPerf" || c.GetName() == "Zapi" {
+			return true
+		}
+	}
+	return false
 }
 
 func startPoller(_ *cobra.Command, _ []string) {
@@ -771,9 +864,15 @@ func init() {
 	flags.IntVarP(&args.LogLevel, "loglevel", "l", 2, "Logging level (0=trace, 1=debug, 2=info, 3=warning, 4=error, 5=critical)")
 	flags.IntVar(&args.Profiling, "profiling", 0, "If profiling port > 0, enables profiling via localhost:PORT/debug/pprof/")
 	flags.IntVar(&args.PromPort, "promPort", 0, "Prometheus Port")
-	flags.StringVar(&args.Config, "config", configPath, "harvest config file path")
-	flags.StringSliceVarP(&args.Collectors, "collectors", "c", []string{}, "only start these collectors (overrides harvest.yml)")
-	flags.StringSliceVarP(&args.Objects, "objects", "o", []string{}, "only start these objects (overrides collector config)")
+	flags.StringVar(&args.Config, "config", configPath, "Harvest config file path")
+	flags.StringSliceVarP(&args.Collectors, "collectors", "c", []string{}, "Only start these collectors (overrides harvest.yml)")
+	flags.StringSliceVarP(&args.Objects, "objects", "o", []string{}, "Only start these objects (overrides collector config)")
+
+	// Used to test autosupport at startup. An environment variable is used instead of a cmdline
+	// arg, so we don't have to also add this testing arg to harvest cli
+	if isAsup := os.Getenv("ASUP"); isAsup != "" {
+		args.Asup = true
+	}
 
 	_ = pollerCmd.MarkFlagRequired("poller")
 }

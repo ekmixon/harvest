@@ -1915,7 +1915,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Space Used",
+      "title": "Space Used by Snapshots",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2024,7 +2024,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Space Used %",
+      "title": "Space Used by Snapshots %",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2133,7 +2133,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Space Reserved %",
+      "title": "Space Reserved for Snapshots%",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2242,7 +2242,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Inodes Used %",
+      "title": "Snapshot Inodes Used %",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2356,7 +2356,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Files",
+      "title": "Snapshot Files",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2477,7 +2477,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "MaxFiles",
+      "title": "Snapshot MaxFiles",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -2545,7 +2545,7 @@
         "allValue": null,
         "current": {},
         "datasource": "${DS_PROMETHEUS}",
-        "definition": "label_values(aggr_new_status, datacenter)",
+        "definition": "label_values(node_labels{system_type!=\"7mode\"}, datacenter)",
         "description": null,
         "error": null,
         "hide": 0,
@@ -2555,7 +2555,7 @@
         "name": "Datacenter",
         "options": [],
         "query": {
-          "query": "label_values(aggr_new_status, datacenter)",
+          "query": "label_values(node_labels{system_type!=\"7mode\"}, datacenter)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
