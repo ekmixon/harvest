@@ -11,6 +11,8 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.23.0
 	github.com/spf13/cobra v1.2.1
+	github.com/tidwall/gjson v1.9.0
+	github.com/tidwall/pretty v1.2.0 // indirect
 	golang.org/x/sys v0.0.0-20210603125802-9665404d3644 // indirect
 	golang.org/x/term v0.0.0-20210503060354-a79de5458b56
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0

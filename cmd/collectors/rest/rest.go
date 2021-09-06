@@ -2,6 +2,7 @@ package rest
 
 import (
 	"encoding/json"
+	"github.com/tidwall/gjson"
 	"goharvest2/cmd/poller/collector"
 	"goharvest2/cmd/poller/plugin"
 	"goharvest2/pkg/api/ontapi/rest"
@@ -9,7 +10,6 @@ import (
 	"goharvest2/pkg/matrix"
 	//"goharvest2/pkg/tree/node"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -103,8 +103,6 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 	var (
 		content      []byte
 		data         map[string]interface{}
-		records      []interface{}
-		ok           bool
 		count        uint64
 		apiD, parseD time.Duration
 		startTime    time.Time
@@ -126,30 +124,36 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 	}
 	parseD = time.Since(startTime)
 
-	if records, ok = data["records"].([]interface{}); !ok {
+	numRecords := gjson.Get(string(content), "num_records")
+	if numRecords.Int() == 0 {
 		return nil, errors.New(errors.ERR_NO_INSTANCE, "no "+r.Object+" instances on cluster")
 	}
 
 	//r.Logger.Debug().Msgf("raw data:\n%s", string(content))
-	r.Logger.Debug().Msgf("extracted %d [%s] instances", len(records), r.Object)
+	r.Logger.Debug().Msgf("extracted %d [%s] instances", numRecords, r.Object)
 
-	for _, i := range records {
+	records := gjson.Get(string(content), "records")
+
+	for _, i := range records.Array() {
 
 		var (
-			instanceData map[string]interface{}
+			instanceData string
 			instanceKey  string
 			instance     *matrix.Instance
 		)
 
-		if instanceData, ok = i.(map[string]interface{}); !ok {
+		if i.Type != gjson.JSON {
 			r.Logger.Warn().Msg("skip instance")
 			continue
 		}
 
+		instanceData = i.String()
+
 		// extract instance key(s)
 		for _, k := range r.instanceKeys {
-			if value, has := extractLabel(instanceData, k); has {
-				instanceKey += value
+			value := gjson.Get(instanceData, k)
+			if value.Type != gjson.Null {
+				instanceKey += value.String()
 			} else {
 				r.Logger.Warn().Msgf("skip instance, missing key [%s]", k)
 				break
@@ -168,8 +172,9 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		}
 
 		for label, display := range r.instanceLabels {
-			if value, has := extractLabel(instanceData, label); has {
-				instance.SetLabel(display, value)
+			value := gjson.Get(instanceData, label)
+			if value.Type != gjson.Null {
+				instance.SetLabel(display, value.String())
 				count++
 			}
 		}
@@ -177,15 +182,17 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		for key, metric := range r.Matrix.GetMetrics() {
 
 			if metric.GetProperty() == "etl.bool" {
-				if b, has := extractBool(instanceData, key); has {
-					if err = metric.SetValueBool(instance, b); err != nil {
+				b := gjson.Get(instanceData, key)
+				if b.Type != gjson.Null {
+					if err = metric.SetValueBool(instance, b.Bool()); err != nil {
 						r.Logger.Error().Msgf("SetValueBool [metric=%s]: %v", key, err)
 					}
 					count++
 				}
 			} else if metric.GetProperty() == "etl.float" {
-				if f, has := extractFloat(instanceData, key); has {
-					if err = metric.SetValueFloat64(instance, f); err != nil {
+				f := gjson.Get(instanceData, key)
+				if f.Type != gjson.Null {
+					if err = metric.SetValueFloat64(instance, f.Float()); err != nil {
 						r.Logger.Error().Msgf("SetValueFloat64 [metric=%s]: %v", key, err)
 					}
 					count++
@@ -202,38 +209,4 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 	r.AddCollectCount(count)
 
 	return r.Matrix, nil
-}
-
-// these functions are highly inefficient/expensive, only for prototyping
-func extractLabel(data map[string]interface{}, path string) (string, bool) {
-	if x := strings.Split(path, "."); len(x) > 1 {
-		if deeper, ok := data[x[0]].(map[string]interface{}); ok {
-			return extractLabel(deeper, strings.Join(x[1:], "."))
-		}
-		return "", false // path not found
-	}
-	v, ok := data[path].(string)
-	return v, ok
-}
-
-func extractBool(data map[string]interface{}, path string) (bool, bool) {
-	if x := strings.Split(path, "."); len(x) > 1 {
-		if deeper, ok := data[x[0]].(map[string]interface{}); ok {
-			return extractBool(deeper, strings.Join(x[1:], "."))
-		}
-		return false, false // path not found
-	}
-	v, ok := data[path].(bool)
-	return v, ok
-}
-
-func extractFloat(data map[string]interface{}, path string) (float64, bool) {
-	if x := strings.Split(path, "."); len(x) > 1 {
-		if deeper, ok := data[x[0]].(map[string]interface{}); ok {
-			return extractFloat(deeper, strings.Join(x[1:], "."))
-		}
-		return 0, false // path not found
-	}
-	v, ok := data[path].(float64)
-	return v, ok
 }
