@@ -19,9 +19,6 @@ github.com/go-openapi/jsonreference
 github.com/go-openapi/spec
 # github.com/go-openapi/swag v0.19.14
 github.com/go-openapi/swag
-# github.com/google/uuid v1.1.2
-## explicit
-github.com/google/uuid
 # github.com/hashicorp/go-version v1.3.0
 ## explicit
 github.com/hashicorp/go-version
@@ -67,11 +64,6 @@ github.com/shirou/gopsutil/v3/mem
 github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 github.com/spf13/pflag
-# github.com/tklauser/go-sysconf v0.3.8
-## explicit
-github.com/tklauser/go-sysconf
-# github.com/tklauser/numcpus v0.2.3
-github.com/tklauser/numcpus
 # github.com/tidwall/gjson v1.9.0
 ## explicit
 github.com/tidwall/gjson
@@ -80,6 +72,11 @@ github.com/tidwall/match
 # github.com/tidwall/pretty v1.2.0
 ## explicit
 github.com/tidwall/pretty
+# github.com/tklauser/go-sysconf v0.3.8
+## explicit
+github.com/tklauser/go-sysconf
+# github.com/tklauser/numcpus v0.2.3
+github.com/tklauser/numcpus
 # golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4
 golang.org/x/net/idna
 # golang.org/x/sys v0.0.0-20210816074244-15123e1e1f71
