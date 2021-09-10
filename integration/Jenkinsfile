@@ -190,14 +190,16 @@ pipeline {
                                 bash $WORKSPACE/harvest/integration/test/test.sh regression
                                 """
                             }
-                        }
-                        post {
-                            always {
-                                sh """
-                                bash $WORKSPACE/harvest/integration/test/test.sh copy_docker_logs
-                                """
+                            post {
+                                always {
+                                    sh """
+                                    bash $WORKSPACE/harvest/integration/test/test.sh copy_docker_logs
+                                    """
+                                }
                             }
                         }
+
+                    }
                 }
             }
         }
@@ -210,8 +212,4 @@ void stopAndRemoveDockers() {
         for image_id in $(docker images -q);do docker rmi $image_id;done
         for volume_id in $(docker volume ls -q); do docker volume rm -f $volume_id;done
     '''
-}
-
-def getSystemIp() {
-
 }
