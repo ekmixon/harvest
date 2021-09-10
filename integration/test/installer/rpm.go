@@ -24,9 +24,7 @@ func (r *RPM) Install() bool {
 		panic(err)
 	}
 	log.Println("Downloaded: " + r.path)
-	log.Println("Check and remove harvest ")
-	unInstallOutput := utils.Run("yum", "remove", "-y", "harvest")
-	log.Println(unInstallOutput)
+	Uninstall()
 	log.Println("Installing " + rpmFileName)
 	installOutput := utils.Run("yum", "install", "-y", rpmFileName)
 	log.Println(installOutput)
