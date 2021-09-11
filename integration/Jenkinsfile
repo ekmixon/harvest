@@ -73,15 +73,6 @@ pipeline {
                                 bash $WORKSPACE/harvest/integration/test/test.sh regression
                                 """
                             }
-                            post {
-                                always {
-                                     sh '''
-                                         rm -f native_logs.zip
-                                         zip -r native_logs.zip /var/log/harvest
-                                         '''
-                                     archiveArtifacts artifacts: "native_logs.zip", fingerprint: true
-                                }
-                            }
                         }
                     }
 
@@ -139,15 +130,6 @@ pipeline {
                                 sh """
                                 bash $WORKSPACE/harvest/integration/test/test.sh regression
                                 """
-                            }
-                            post {
-                                always {
-                                     sh '''
-                                          rm -f rpm_logs.zip
-                                          zip -r rpm_logs.zip /var/log/harvest
-                                          '''
-                                      archiveArtifacts artifacts: "rpm_logs.zip", fingerprint: true
-                                }
                             }
                         }
                     }
@@ -207,16 +189,15 @@ pipeline {
                                 sh """
                                 bash $WORKSPACE/harvest/integration/test/test.sh regression
                                 """
-
                             }
                             post {
                                 always {
                                     sh """
-                                        bash $WORKSPACE/harvest/integration/test/test.sh copy_docker_logs
-                                        rm -f docker_logs.zip
-                                        zip -r docker_logs.zip /var/log/harvest
+                                    bash $WORKSPACE/harvest/integration/test/test.sh copy_docker_logs
                                     """
-                                    archiveArtifacts artifacts: "docker_logs.zip", fingerprint: true
+                                    sh 'rm -f docker_logs.zip'
+                                    zip zipFile: 'docker_logs.zip', archive: false, dir: '/var/log/harvest'
+                                    archiveArtifacts artifacts: 'docker_logs.zip', fingerprint: true
                                 }
                             }
                         }
@@ -228,7 +209,7 @@ pipeline {
     }
 }
 
-def void stopAndRemoveDockers() {
+void stopAndRemoveDockers() {
     sh '''
         for container_id in $(docker ps -a -q);do docker stop $container_id && docker rm $container_id;done
         for image_id in $(docker images -q);do docker rmi $image_id;done
