@@ -219,6 +219,16 @@ pipeline {
                                     archiveArtifacts artifacts: "docker_logs.zip", fingerprint: true
                                 }
                             }
+                            post {
+                                always {
+                                    sh """
+                                    bash $WORKSPACE/harvest/integration/test/test.sh copy_docker_logs
+                                    """
+                                    sh 'rm -f docker_logs.zip'
+                                    zip zipFile: 'docker_logs.zip', archive: false, dir: '/var/log/harvest'
+                                    archiveArtifacts artifacts: 'docker_logs.zip', fingerprint: true
+                                }
+                            }
                         }
 
                     }
