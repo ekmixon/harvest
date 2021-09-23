@@ -56,7 +56,7 @@ func (r *Rest) Init(a *collector.AbstractCollector) error {
 	if err = r.initCache(r.getTemplateFn(), r.client.Version()); err != nil {
 		return err
 	}
-	r.Logger.Info().Msgf("intialized cache with %d metrics", len(r.Matrix.GetMetrics()))
+	r.Logger.Info().Msgf("initialized cache with %d metrics", len(r.Matrix.GetMetrics()))
 	return nil
 }
 
@@ -203,10 +203,15 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 
 	r.Logger.Info().Msgf("collected %d data points (api time = %s) (parse time = %s)", count, apiD.String(), parseD.String())
 
-	r.Metadata.LazySetValueInt64("api_time", "data", apiD.Microseconds())
-	r.Metadata.LazySetValueInt64("parse_time", "data", parseD.Microseconds())
-	r.Metadata.LazySetValueUint64("count", "data", count)
+	_ = r.Metadata.LazySetValueInt64("api_time", "data", apiD.Microseconds())
+	_ = r.Metadata.LazySetValueInt64("parse_time", "data", parseD.Microseconds())
+	_ = r.Metadata.LazySetValueUint64("count", "data", count)
 	r.AddCollectCount(count)
 
 	return r.Matrix, nil
 }
+
+// Interface guards
+var (
+	_ collector.Collector = (*Rest)(nil)
+)
