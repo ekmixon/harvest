@@ -25,7 +25,6 @@ counters:
   - ?self_encrypting
   - ?fips_certified
 
-
 export_options:
   instance_keys:
     - node

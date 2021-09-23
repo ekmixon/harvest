@@ -2,13 +2,13 @@ package rest
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/tidwall/gjson"
 	"goharvest2/cmd/poller/collector"
 	"goharvest2/cmd/poller/plugin"
 	"goharvest2/pkg/api/ontapi/rest"
 	"goharvest2/pkg/errors"
 	"goharvest2/pkg/matrix"
-	//"goharvest2/pkg/tree/node"
 	"strconv"
 	"time"
 )
@@ -114,48 +114,44 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 
 	startTime = time.Now()
 	if content, err = r.client.Get(r.apiPath, map[string]string{"fields": "*,"}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error calling: %s err=%w", r.apiPath, err)
 	}
 	apiD = time.Since(startTime)
 
 	startTime = time.Now()
 	if err = json.Unmarshal(content, &data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error parsing response of: %s err=%w", r.apiPath, err)
 	}
 	parseD = time.Since(startTime)
 
-	numRecords := gjson.Get(string(content), "num_records")
+	numRecords := gjson.GetBytes(content, "num_records")
 	if numRecords.Int() == 0 {
 		return nil, errors.New(errors.ERR_NO_INSTANCE, "no "+r.Object+" instances on cluster")
 	}
 
-	//r.Logger.Debug().Msgf("raw data:\n%s", string(content))
 	r.Logger.Debug().Msgf("extracted %d [%s] instances", numRecords, r.Object)
 
-	records := gjson.Get(string(content), "records")
+	records := gjson.GetBytes(content, "records")
 
-	for _, i := range records.Array() {
+	for _, instanceData := range records.Array() {
 
 		var (
-			instanceData string
-			instanceKey  string
-			instance     *matrix.Instance
+			instanceKey string
+			instance    *matrix.Instance
 		)
 
-		if i.Type != gjson.JSON {
-			r.Logger.Warn().Msg("skip instance")
+		if !instanceData.IsObject() {
+			r.Logger.Warn().Str("type", instanceData.Type.String()).Msg("skip instance")
 			continue
 		}
 
-		instanceData = i.String()
-
 		// extract instance key(s)
 		for _, k := range r.instanceKeys {
-			value := gjson.Get(instanceData, k)
-			if value.Type != gjson.Null {
+			value := instanceData.Get(k)
+			if value.Exists() {
 				instanceKey += value.String()
 			} else {
-				r.Logger.Warn().Msgf("skip instance, missing key [%s]", k)
+				r.Logger.Warn().Str("key", k).Msg("skip instance, missing key")
 				break
 			}
 		}
@@ -172,8 +168,8 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		}
 
 		for label, display := range r.instanceLabels {
-			value := gjson.Get(instanceData, label)
-			if value.Type != gjson.Null {
+			value := instanceData.Get(label)
+			if value.Exists() {
 				instance.SetLabel(display, value.String())
 				count++
 			}
@@ -182,18 +178,18 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		for key, metric := range r.Matrix.GetMetrics() {
 
 			if metric.GetProperty() == "etl.bool" {
-				b := gjson.Get(instanceData, key)
-				if b.Type != gjson.Null {
+				b := instanceData.Get(key)
+				if b.Exists() {
 					if err = metric.SetValueBool(instance, b.Bool()); err != nil {
-						r.Logger.Error().Msgf("SetValueBool [metric=%s]: %v", key, err)
+						r.Logger.Error().Err(err).Str("key", key).Msg("SetValueBool metric")
 					}
 					count++
 				}
 			} else if metric.GetProperty() == "etl.float" {
-				f := gjson.Get(instanceData, key)
-				if f.Type != gjson.Null {
+				f := instanceData.Get(key)
+				if f.Exists() {
 					if err = metric.SetValueFloat64(instance, f.Float()); err != nil {
-						r.Logger.Error().Msgf("SetValueFloat64 [metric=%s]: %v", key, err)
+						r.Logger.Error().Err(err).Str("key", key).Msg("SetValueFloat64 metric")
 					}
 					count++
 				}
@@ -201,7 +197,11 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		}
 	}
 
-	r.Logger.Info().Msgf("collected %d data points (api time = %s) (parse time = %s)", count, apiD.String(), parseD.String())
+	r.Logger.Info().
+		Uint64("dataPoints", count).
+		Str("apiTime", apiD.String()).
+		Str("parseTime", parseD.String()).
+		Msg("Collected")
 
 	_ = r.Metadata.LazySetValueInt64("api_time", "data", apiD.Microseconds())
 	_ = r.Metadata.LazySetValueInt64("parse_time", "data", parseD.Microseconds())
