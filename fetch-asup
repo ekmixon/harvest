@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+    echo "You need to provide ASUP_BIN_DIR and ASUP_BINARY_VERSION as arguments"
+    exit 1
+fi
+
+ASUP_BIN_DIR="$1"
+ASUP_BINARY_VERSION="$2"
+
+mkdir -p "$ASUP_BIN_DIR"
+GOMODCACHE=/Users/cgrindst/opt/harvest/$ASUP_BIN_DIR go mod download github.com/rahulguptajss/Test@"$ASUP_BINARY_VERSION"
+mod_bin=$(find "$ASUP_BIN_DIR" -name "*asup*" -name "*$GOOS*" -exec ls -t {} + | head -n 1)
+if [ -n "${mod_bin+x}" ]; then
+	cp -f "$mod_bin" ./autosupport/asup
+	chmod +x ./autosupport/asup
+	chmod -R +rw "$ASUP_BIN_DIR/github.com/"
+fi

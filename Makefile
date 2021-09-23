@@ -28,8 +28,8 @@ ASUP_TMP := /tmp/asup
 ASUP_MAKE_TARGET ?= build #one of build/production
 GIT_TOKEN ?=
 CURRENT_DIR = $(shell pwd)
-ASUP_PAYLOAD_DIR = ${CURRENT_DIR}/asup
-ASUP_BINARY_VERSION ?= latest
+ASUP_BIN = ${CURRENT_DIR}/asup
+ASUP_BIN_VERSION ?= latest
 
 
 help:  ## Display this help
@@ -142,14 +142,7 @@ dev: build
 	@rm -rf autosupport/asup
 
 fetch-asup:
-	@mkdir -p ${ASUP_PAYLOAD_DIR}
-	@GOMODCACHE=${ASUP_PAYLOAD_DIR} go mod download github.com/rahulguptajss/Test@$(ASUP_BINARY_VERSION)
-	@$(eval MY_VAR=$(shell find ${ASUP_PAYLOAD_DIR} -name "*asup*" -name "*"$(GOOS)"*" -exec ls -t {} + | head -n 1))
-ifeq (${MY_VAR}, )
-	@\cp -rf $(MY_VAR) ${CURRENT_DIR}/autosupport/asup
-	@chmod u=rwx,g=rx,o=rx ${CURRENT_DIR}/autosupport/asup
-endif
-
+	./fetch-asup ${ASUP_BIN} ${ASUP_BIN_VERSION}
 
 
 
