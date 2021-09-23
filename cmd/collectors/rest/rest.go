@@ -1,7 +1,6 @@
 package rest
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/tidwall/gjson"
 	"goharvest2/cmd/poller/collector"
@@ -102,7 +101,6 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 
 	var (
 		content      []byte
-		data         map[string]interface{}
 		count        uint64
 		apiD, parseD time.Duration
 		startTime    time.Time
@@ -119,22 +117,20 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 	apiD = time.Since(startTime)
 
 	startTime = time.Now()
-	if err = json.Unmarshal(content, &data); err != nil {
-		return nil, fmt.Errorf("error parsing response of: %s err=%w", r.apiPath, err)
+	if !gjson.ValidBytes(content) {
+		return nil, fmt.Errorf("json is not valid for: %s", r.apiPath)
 	}
 	parseD = time.Since(startTime)
 
-	numRecords := gjson.GetBytes(content, "num_records")
+	results := gjson.GetManyBytes(content, "num_records", "records")
+	numRecords := results[0]
 	if numRecords.Int() == 0 {
 		return nil, errors.New(errors.ERR_NO_INSTANCE, "no "+r.Object+" instances on cluster")
 	}
 
 	r.Logger.Debug().Msgf("extracted %d [%s] instances", numRecords, r.Object)
 
-	records := gjson.GetBytes(content, "records")
-
-	for _, instanceData := range records.Array() {
-
+	results[1].ForEach(func(key, instanceData gjson.Result) bool {
 		var (
 			instanceKey string
 			instance    *matrix.Instance
@@ -142,7 +138,7 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 
 		if !instanceData.IsObject() {
 			r.Logger.Warn().Str("type", instanceData.Type.String()).Msg("skip instance")
-			continue
+			return true
 		}
 
 		// extract instance key(s)
@@ -157,13 +153,13 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 		}
 
 		if instanceKey == "" {
-			continue
+			return true
 		}
 
 		if instance = r.Matrix.GetInstance(instanceKey); instance == nil {
 			if instance, err = r.Matrix.NewInstance(instanceKey); err != nil {
 				r.Logger.Error().Msgf("NewInstance [key=%s]: %v", instanceKey, err)
-				continue
+				return true
 			}
 		}
 
@@ -195,7 +191,8 @@ func (r *Rest) PollData() (*matrix.Matrix, error) {
 				}
 			}
 		}
-	}
+		return true
+	})
 
 	r.Logger.Info().
 		Uint64("dataPoints", count).
