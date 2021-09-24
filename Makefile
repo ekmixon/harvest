@@ -142,7 +142,7 @@ dev: build
 	@rm -rf autosupport/asup
 
 fetch-asup:
-	./fetch-asup ${ASUP_BIN} ${ASUP_BIN_VERSION}
+	@./.github/fetch-asup ${ASUP_BIN} ${ASUP_BIN_VERSION}
 
 
 
