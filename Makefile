@@ -28,7 +28,7 @@ ASUP_TMP := /tmp/asup
 ASUP_MAKE_TARGET ?= build #one of build/production
 GIT_TOKEN ?=
 CURRENT_DIR = $(shell pwd)
-ASUP_BIN = ${CURRENT_DIR}/asup
+ASUP_BIN = asup
 ASUP_BIN_VERSION ?= latest
 
 
