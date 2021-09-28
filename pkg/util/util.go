@@ -179,3 +179,10 @@ func ContainsWholeWord(source string, search string) bool {
 	}
 	return false
 }
+
+func Value(ptr *string, nilValue string) string {
+	if ptr == nil {
+		return nilValue
+	}
+	return *ptr
+}

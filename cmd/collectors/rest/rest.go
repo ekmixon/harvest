@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"github.com/tidwall/gjson"
 	"goharvest2/cmd/poller/collector"
+	"goharvest2/cmd/poller/options"
 	"goharvest2/cmd/poller/plugin"
 	"goharvest2/pkg/api/ontapi/rest"
+	"goharvest2/pkg/conf"
 	"goharvest2/pkg/errors"
 	"goharvest2/pkg/matrix"
-	"strconv"
+	"goharvest2/pkg/util"
 	"time"
 )
 
@@ -40,7 +42,8 @@ func (r *Rest) Init(a *collector.AbstractCollector) error {
 		return err
 	}
 
-	if r.client, err = r.getClient(); err != nil {
+	a.GetOptions()
+	if r.client, err = r.getClient(a.GetOptions()); err != nil {
 		return err
 	}
 
@@ -59,34 +62,52 @@ func (r *Rest) Init(a *collector.AbstractCollector) error {
 	return nil
 }
 
-func (r *Rest) getClient() (*rest.Client, error) {
+func (r *Rest) getClient(opt *options.Options) (*rest.Client, error) {
 	var (
-		addr, x             string
-		useInsecureTls      bool
+		poller              *conf.Poller
+		addr                string
+		useInsecureTLS      bool
 		certAuth, basicAuth [2]string
+		err                 error
 	)
 
-	if addr = r.Params.GetChildContentS("addr"); addr == "" {
+	if poller, err = conf.GetPoller2(opt.Config, opt.Poller); err != nil {
+		r.Logger.Error().Stack().Err(err).Str("poller", opt.Poller).Msgf("")
+		return nil, err
+	}
+	if addr = util.Value(poller.Addr, ""); addr == "" {
+		r.Logger.Error().Stack().Str("poller", opt.Poller).Str("addr", addr).Msgf("Invalid address")
 		return nil, errors.New(errors.MISSING_PARAM, "addr")
 	}
 
-	if x = r.Params.GetChildContentS("use_insecure_tls"); x != "" {
-		useInsecureTls, _ = strconv.ParseBool(x)
+	// by default, enforce secure TLS, if not requested otherwise by user
+	if x := poller.UseInsecureTls; x != nil {
+		useInsecureTLS = *poller.UseInsecureTls
+	} else {
+		useInsecureTLS = false
 	}
 
 	// set authentication method
-	if r.Params.GetChildContentS("auth_style") == "certificate_auth" {
+	if poller.AuthStyle != nil && *poller.AuthStyle == "certificate_auth" {
+		certAuth[0] = util.Value(poller.SslCert, "")
+		certAuth[1] = util.Value(poller.SslKey, "")
+		if certAuth[0] == "" {
+			return nil, errors.New(errors.MISSING_PARAM, "ssl_cert")
+		} else if certAuth[1] == "" {
+			return nil, errors.New(errors.MISSING_PARAM, "ssl_key")
+		}
+		return rest.New(addr, &certAuth, nil, useInsecureTLS)
+	} else {
+		basicAuth[0] = util.Value(poller.Username, "")
+		basicAuth[1] = poller.Password
+		if basicAuth[0] == "" {
+			return nil, errors.New(errors.MISSING_PARAM, "username")
+		} else if basicAuth[1] == "" {
+			return nil, errors.New(errors.MISSING_PARAM, "password")
+		}
 
-		certAuth[0] = r.Params.GetChildContentS("ssl_cert")
-		certAuth[1] = r.Params.GetChildContentS("ssl_key")
-
-		return rest.New(addr, &certAuth, nil, useInsecureTls)
+		return rest.New(addr, nil, &basicAuth, useInsecureTLS)
 	}
-
-	basicAuth[0] = r.Params.GetChildContentS("username")
-	basicAuth[1] = r.Params.GetChildContentS("password")
-
-	return rest.New(addr, nil, &basicAuth, useInsecureTls)
 }
 
 func (r *Rest) getTemplateFn() string {

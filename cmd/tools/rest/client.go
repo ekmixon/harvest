@@ -9,6 +9,7 @@ import (
 	"goharvest2/pkg/conf"
 	"goharvest2/pkg/errors"
 	"goharvest2/pkg/logging"
+	"goharvest2/pkg/util"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -68,8 +69,8 @@ func New(poller *conf.Poller) (*Client, error) {
 
 	// set authentication method
 	if poller.AuthStyle != nil && *poller.AuthStyle == "certificate_auth" {
-		certPath := value(poller.SslCert, "")
-		keyPath := value(poller.SslKey, "")
+		certPath := util.Value(poller.SslCert, "")
+		keyPath := util.Value(poller.SslKey, "")
 		if certPath == "" {
 			return nil, errors.New(errors.MISSING_PARAM, "ssl_cert")
 		} else if keyPath == "" {
@@ -85,7 +86,7 @@ func New(poller *conf.Poller) (*Client, error) {
 				InsecureSkipVerify: useInsecureTLS},
 		}
 	} else {
-		username := value(poller.Username, "")
+		username := util.Value(poller.Username, "")
 		password := poller.Password
 		client.username = username
 		client.password = password

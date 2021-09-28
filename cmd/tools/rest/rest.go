@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"goharvest2/pkg/conf"
+	"goharvest2/pkg/util"
 	"io"
 	"os"
 	"path/filepath"
@@ -199,7 +200,7 @@ func getPollerAndAddr() (*conf.Poller, string, error) {
 		fmt.Printf("Poller named [%s] does not exist\n", args.Poller)
 		return nil, "", err
 	}
-	if addr = value(poller.Addr, ""); addr == "" {
+	if addr = util.Value(poller.Addr, ""); addr == "" {
 		fmt.Printf("Poller named [%s] does not have a valid addr=[%s]\n", args.Poller, addr)
 		return nil, "", err
 	}
