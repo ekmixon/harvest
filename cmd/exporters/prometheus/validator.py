@@ -59,11 +59,11 @@ def main():
 
     # run the scrapes
     for i in range(a.scrapes):
-        
+
         # cache metrics for which we have seen metatags
         help_cache = {}   # str -> bool
         type_cache = {}   # str -> bool
-        
+
         metrics = get_batch_metrics(a.addr, a.port)
         print('{}-> scrape #{:<4} - scraped metrics/lines: {}{}'.format(BOLD, i+1, len(metrics.splitlines()), END))
 
@@ -73,12 +73,12 @@ def main():
 
         if not metrics.endswith('\n'):
             errors['missing_newlines'] += 1
-            print('   {}missing newline at the end of metric batch{}'.format(PINK, END))
+            print(f'   {PINK}missing newline at the end of metric batch{END}')
 
         for m in metrics.splitlines():
 
             # skip newline
-            if m == '\n' or m == '':
+            if m in ['\n', '']:
                 continue
 
             # handle metatag
@@ -86,16 +86,16 @@ def main():
                 ok, tag, metric_name = check_metatag(m)
                 if not ok:
                     errors['corrupt_metatags'] += 1
-                    print('   corrupt {} metatag:'.format(tag))
-                    print('   [{}{}{}]'.format(RED, m, END))
+                    print(f'   corrupt {tag} metatag:')
+                    print(f'   [{RED}{m}{END}]')
                 elif tag == 'HELP':
                     if help_cache.get(metric_name, False):
                         errors['duplicate_metatags'] += 1  # count only once
-                        print('   duplicate HELP tag for metric {}'.format(metric_name))
+                        print(f'   duplicate HELP tag for metric {metric_name}')
                     help_cache[metric_name] = True
                 elif tag == 'TYPE':
                     if type_cache.get(metric_name, False):
-                        print('   duplicate TYPE tag for metric {}'.format(metric_name))
+                        print(f'   duplicate TYPE tag for metric {metric_name}')
                     type_cache[metric_name] = True
                 continue
 
@@ -105,7 +105,7 @@ def main():
             if not ok:
                 errors['corrupt_metrics'] += 1
                 print('   corrupt metric format:')
-                print('   [{}{}{}]'.format(RED, m, END))
+                print(f'   [{RED}{m}{END}]')
                 continue
 
             # check labels integrity
@@ -113,33 +113,31 @@ def main():
             if not ok:
                 errors['corrupt_metrics'] += 1
                 print('   corrupt metric format (labels):')
-                print('   [{}{}{}]'.format(RED, m, END))
+                print(f'   [{RED}{m}{END}]')
                 continue
-            
-            # check for duplicate labels
-            duplicates = set([l for l in labels if labels.count(l) > 1])
-            if duplicates:
+
+            if duplicates := {l for l in labels if labels.count(l) > 1}:
                 errors['duplicate_labels'] += 1
-                print('   duplicate labels ({}):'.format(', '.join(duplicates)))
-                print('   [{}{}{}]'.format(RED, m, END))
+                print(f"   duplicate labels ({', '.join(duplicates)}):")
+                print(f'   [{RED}{m}{END}]')
 
             labels = set(labels)
 
             # compare with cached labels for consistency
             cached_labels = label_cache.get(metric_name, None)
-            if cached_labels == None:
+            if cached_labels is None:
                 label_cache[metric_name] = labels
             else:
                 missing = cached_labels - labels
                 added = labels - cached_labels
                 if missing or added:
                     errors['inconsistent_labels'] += 1
-                    print('   inconsistent labels (cached: {}):'.format(' '.join(cached_labels)))
+                    print(f"   inconsistent labels (cached: {' '.join(cached_labels)}):")
                     if missing:
-                        print('     - missing ({})'.format(', '.join(missing)))
+                        print(f"     - missing ({', '.join(missing)})")
                     if added:
-                        print('     - added ({})'.format(', '.join(added)))
-                    print('   [{}{}{}]'.format(RED, m, END))
+                        print(f"     - added ({', '.join(added)})")
+                    print(f'   [{RED}{m}{END}]')
 
             # optionally check for metatags
             # each metrics should at least once include HELP/TYPE metametric
@@ -148,11 +146,11 @@ def main():
                 has_type = type_cache.get(metric_name, False)
                 if not has_help or not has_type:
                     errors['missing_metatags'] += 1
-                    print('   {}missing metatags for metric [{}]{}'.format(RED, metric_name, END))
-                    if not has_help:
-                        print('     - HELP tag not detected')
-                    if not has_type:
-                        print('     - TYPE tag not detected')
+                    print(f'   {RED}missing metatags for metric [{metric_name}]{END}')
+                if not has_help:
+                    print('     - HELP tag not detected')
+                if not has_type:
+                    print('     - TYPE tag not detected')
 
         # sleep until next scrape
         time.sleep(a.interval)
@@ -163,28 +161,26 @@ def main():
 # Scrape an HTTP endpoint and return data
 def get_batch_metrics(addr: str, port: int) -> str:
     try:
-        return urllib.request.urlopen('http://{}:{}/metrics'.format(addr, port)).read().decode()
+        return urllib.request.urlopen(f'http://{addr}:{port}/metrics').read().decode()
     except urllib.error.URLError as err:
         print(err)
         return ''
 
 # validate metric format (without labels), extract name and labels substring
 def check_metric(metric: str) -> (bool, str, str):
-    match  = metric_pattern.match(metric)
-    if match:
+    if match := metric_pattern.match(metric):
         try:
             return True, match.captures(1)[0], match.captures(2)[0]
         except Exception as ex:
-            print('regex exception: {}'.format(ex))
+            print(f'regex exception: {ex}')
     return False, '', ''
 
 def check_metatag(metric: str) -> (bool, str, str):
-    match = tag_pattern.match(metric)
-    if match:
+    if match := tag_pattern.match(metric):
         try:
             return True, match.captures(1)[0], match.captures(2)[0]
         except Exception as ex:
-            print('regex exception: {}'.format(ex))
+            print(f'regex exception: {ex}')
     return False, '', ''
 
 # parse label keys from raw labels substring
@@ -193,25 +189,25 @@ def parse_labels(labels: str) -> (bool, [str]):
     for pair in labels.split(','):
         match = label_pattern.match(pair)
         if not match:
-            print('     - failed parse label pair ({})'.format(pair))
+            print(f'     - failed parse label pair ({pair})')
             return False, keys
         keys.append(match.captures(1)[0])
 
     return True, keys
 
 def terminate(signum, frame):
-    print('\n{}-> terminating validation session{}'.format(YELLOW, END))
+    print(f'\n{YELLOW}-> terminating validation session{END}')
     print_errors()
     sys.exit()
 
 def print_errors():
     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-    print('-> {} unique metrics validated'.format(len(label_cache)))
+    print(f'-> {len(label_cache)} unique metrics validated')
     total = sum(errors.values())
     if total == 0:
-        print('{}-> OK - no errors detected{}'.format(GREEN, END))
+        print(f'{GREEN}-> OK - no errors detected{END}')
     else:
-        print('{}-> FAIL - {} errors detected{}'.format(RED, total, END))
+        print(f'{RED}-> FAIL - {total} errors detected{END}')
 
     for k, v in errors.items():
         print('{:<30} - {:>8}'.format(k, v))
